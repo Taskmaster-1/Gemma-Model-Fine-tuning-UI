@@ -18,9 +18,22 @@ from ui.components import (
 from models.train import train_model
 from utils.data_utils import load_data, validate_dataset
 from utils.visualization import plot_training_progress
-from utils.logging_utils import setup_logging
 
 # Configure logging
+def setup_logging():
+    """Set up logging configuration"""
+    log_dir = "logs"
+    os.makedirs(log_dir, exist_ok=True)
+    
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s [%(levelname)s] %(message)s",
+        handlers=[
+            logging.FileHandler(os.path.join(log_dir, f"app_{datetime.now().strftime('%Y%m%d')}.log")),
+            logging.StreamHandler()
+        ]
+    )
+
 setup_logging()
 logger = logging.getLogger(__name__)
 
@@ -90,11 +103,13 @@ with st.sidebar:
     st.subheader("4. Export Options")
     export_options_config = export_options()
     
+    # Visualization settings
+    visualization_config = visualization()
+    
     # Combine all configurations
     config = {
-        "model": model_config,
-        "training": training_config_params,
-        "export": export_options_config
+        **model_config,
+        **training_config_params
     }
     
     # Start training button
@@ -124,7 +139,7 @@ with main_container:
                 def progress_callback(step, total_steps, loss, examples=None):
                     st.session_state.current_step = step
                     st.session_state.total_steps = total_steps
-                    progress = step / total_steps
+                    progress = min(1.0, step / total_steps if total_steps > 0 else 0)
                     progress_bar.progress(progress)
                     
                     status_text.text(f"Step {step}/{total_steps} - Loss: {loss:.4f}")
@@ -132,8 +147,9 @@ with main_container:
                     # Update loss history
                     st.session_state.loss_history.append({"step": step, "loss": loss})
                     
-                    # Update loss chart periodically
-                    if step % 10 == 0 or step == total_steps:
+                    # Update loss chart periodically or based on config
+                    update_freq = visualization_config.get("update_freq", 10)
+                    if step % update_freq == 0 or step == total_steps:
                         fig = plot_training_progress(st.session_state.loss_history)
                         loss_chart.pyplot(fig)
                     
@@ -174,22 +190,29 @@ with main_container:
         # Create download buttons for the model
         col1, col2 = st.columns(2)
         
+        model_files = os.listdir(st.session_state.model_path)
+        
         with col1:
-            st.download_button(
-                label="Download Model (PyTorch)",
-                data=open(os.path.join(st.session_state.model_path, "pytorch_model.bin"), "rb"),
-                file_name="pytorch_model.bin",
-                mime="application/octet-stream"
-            )
+            if "pytorch_model.bin" in model_files:
+                st.download_button(
+                    label="Download Model (PyTorch)",
+                    data=open(os.path.join(st.session_state.model_path, "pytorch_model.bin"), "rb"),
+                    file_name="pytorch_model.bin",
+                    mime="application/octet-stream"
+                )
+            else:
+                st.info("PyTorch model file not available.")
         
         with col2:
-            if os.path.exists(os.path.join(st.session_state.model_path, "tf_model.h5")):
+            if "tf_model.h5" in model_files:
                 st.download_button(
                     label="Download Model (TensorFlow)",
                     data=open(os.path.join(st.session_state.model_path, "tf_model.h5"), "rb"),
                     file_name="tf_model.h5",
                     mime="application/octet-stream"
                 )
+            else:
+                st.info("TensorFlow model file not available.")
         
         # Model testing interface
         st.subheader("Test Your Fine-tuned Model")
@@ -236,8 +259,4 @@ st.markdown(
     "Developed for Google Summer of Code | "
     "[GitHub Repository](https://github.com/Taskmaster-1/Gemma-Model-Fine-tuning-UI) | "
     "[Report Issues](https://github.com/Taskmaster-1/Gemma-Model-Fine-tuning-UI/issues)"
-<<<<<<< HEAD
 )
-=======
-)
->>>>>>> 7ccfbc3e8009f1a64510e629f86fea3f0e696407
