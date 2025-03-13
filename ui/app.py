@@ -1,5 +1,13 @@
 import streamlit as st
+import sys
+import os
+
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+
 from ui.components import dataset_uploader, model_selector
+from models.train import train_model
+
+from components import dataset_uploader, model_selector
 from models.train import train_model
 
 st.set_page_config(page_title="Gemma Model Fine-tuning UI", layout="wide")
