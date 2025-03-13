@@ -13,10 +13,12 @@ from ui.components import (
     model_selector, 
     training_config, 
     export_options,
-    visualization
+    visualization,
+    inference_panel
 )
 from models.train import train_model
-from utils.data_utils import load_data, validate_dataset
+from models.infer import generate_text, batch_generate
+from utils.data_utils import load_data, validate_dataset, prepare_dataset_for_training
 from utils.visualization import plot_training_progress
 
 # Configure logging
@@ -65,6 +67,10 @@ if 'current_step' not in st.session_state:
     st.session_state.current_step = 0
 if 'total_steps' not in st.session_state:
     st.session_state.total_steps = 0
+if 'generation_examples' not in st.session_state:
+    st.session_state.generation_examples = []
+if 'prepared_dataset' not in st.session_state:
+    st.session_state.prepared_dataset = None
 
 # Create sidebar for configuration
 with st.sidebar:
@@ -81,9 +87,13 @@ with st.sidebar:
             is_valid, message = validate_dataset(df)
             
             if is_valid:
+                # Prepare dataset if needed
+                prepared_df = prepare_dataset_for_training(df)
+                st.session_state.prepared_dataset = prepared_df
+                
                 st.success(f"Dataset loaded successfully: {len(df)} examples")
                 with st.expander("Dataset Preview"):
-                    st.dataframe(df.head(5))
+                    st.dataframe(prepared_df.head(5))
             else:
                 st.error(f"Invalid dataset: {message}")
                 dataset_path = None
@@ -112,6 +122,22 @@ with st.sidebar:
         **training_config_params
     }
     
+    # Estimate memory requirements
+    model_size_mb = {"gemma-2b": 2000, "gemma-7b": 7000, "gemma-13b": 13000}
+    batch_mem = config["batch_size"] * config["max_length"] * 2 / 1024  # Estimated memory in MB
+    total_mem = model_size_mb.get(selected_model, 2000) + batch_mem
+    
+    st.info(f"Estimated memory requirement: {total_mem:.0f} MB")
+    
+    # GPU availability check
+    import torch
+    if torch.cuda.is_available():
+        gpu_mem = torch.cuda.get_device_properties(0).total_memory / (1024 * 1024)  # MB
+        if gpu_mem < total_mem:
+            st.warning(f"⚠️ Available GPU memory ({gpu_mem:.0f} MB) may be insufficient!")
+    else:
+        st.warning("⚠️ No GPU detected. Training will be slow on CPU.")
+    
     # Start training button
     start_button = st.button("Start Fine-tuning", disabled=not dataset_path)
 
@@ -120,21 +146,34 @@ main_container = st.container()
 
 # Training section
 with main_container:
+    if not st.session_state.training_completed:
+        # Create tabs for different views
+        train_tab, eval_tab, logs_tab = st.tabs(["Training Progress", "Evaluation", "Logs"])
+
     if start_button and dataset_path:
         st.session_state.training_started = True
         st.session_state.current_step = 0
         st.session_state.loss_history = []
-        
-        # Create tabs for different views
-        train_tab, eval_tab, logs_tab = st.tabs(["Training Progress", "Evaluation", "Logs"])
+        st.session_state.generation_examples = []
         
         with train_tab:
-            progress_bar = st.progress(0)
-            status_text = st.empty()
-            loss_chart = st.empty()
+            progress_col1, progress_col2 = st.columns([3, 1])
+            
+            with progress_col1:
+                progress_bar = st.progress(0)
+                status_text = st.empty()
+                loss_chart = st.empty()
+            
+            with progress_col2:
+                stats_container = st.container()
+                time_remaining = st.empty()
+            
             example_container = st.empty()
             
             try:
+                # Start of training timestamp for ETA calculation
+                start_time = datetime.now()
+                
                 # Start training with callback for progress updates
                 def progress_callback(step, total_steps, loss, examples=None):
                     st.session_state.current_step = step
@@ -142,10 +181,26 @@ with main_container:
                     progress = min(1.0, step / total_steps if total_steps > 0 else 0)
                     progress_bar.progress(progress)
                     
+                    # Calculate time remaining
+                    if step > 1:
+                        elapsed_time = (datetime.now() - start_time).total_seconds()
+                        time_per_step = elapsed_time / step
+                        remaining_steps = total_steps - step
+                        eta_seconds = remaining_steps * time_per_step
+                        eta_str = str(datetime.timedelta(seconds=int(eta_seconds)))
+                        time_remaining.text(f"Time remaining: {eta_str}")
+                    
                     status_text.text(f"Step {step}/{total_steps} - Loss: {loss:.4f}")
                     
                     # Update loss history
                     st.session_state.loss_history.append({"step": step, "loss": loss})
+                    
+                    # Display training stats
+                    with stats_container:
+                        st.metric("Current Loss", f"{loss:.4f}")
+                        if len(st.session_state.loss_history) > 1:
+                            avg_loss = sum(item["loss"] for item in st.session_state.loss_history[-10:]) / min(10, len(st.session_state.loss_history))
+                            st.metric("Avg Loss (10 steps)", f"{avg_loss:.4f}")
                     
                     # Update loss chart periodically or based on config
                     update_freq = visualization_config.get("update_freq", 10)
@@ -153,8 +208,9 @@ with main_container:
                         fig = plot_training_progress(st.session_state.loss_history)
                         loss_chart.pyplot(fig)
                     
-                    # Display example generations periodically
+                    # Store and display example generations periodically
                     if examples and (step % 50 == 0 or step == total_steps):
+                        st.session_state.generation_examples = examples
                         example_container.markdown("### Example Generations")
                         for i, (prompt, completion) in enumerate(examples):
                             example_container.markdown(f"**Prompt {i+1}:** {prompt}")
@@ -183,54 +239,129 @@ with main_container:
                 st.error(f"Training failed: {str(e)}")
                 st.session_state.training_started = False
 
-    # Show training results if completed
-    elif st.session_state.training_completed and st.session_state.model_path:
-        st.success(f"Training completed! Model is ready for use.")
+    # Show inference UI when training is completed
+    if st.session_state.training_completed and st.session_state.model_path:
+        st.markdown("## Model Testing & Export")
         
-        # Create download buttons for the model
-        col1, col2 = st.columns(2)
+        model_tabs = st.tabs(["Model Testing", "Batch Processing", "Export Model"])
         
-        model_files = os.listdir(st.session_state.model_path)
+        with model_tabs[0]:  # Model Testing
+            # Basic inference
+            inference_panel(st.session_state.model_path)
         
-        with col1:
-            if "pytorch_model.bin" in model_files:
-                st.download_button(
-                    label="Download Model (PyTorch)",
-                    data=open(os.path.join(st.session_state.model_path, "pytorch_model.bin"), "rb"),
-                    file_name="pytorch_model.bin",
-                    mime="application/octet-stream"
-                )
-            else:
-                st.info("PyTorch model file not available.")
-        
-        with col2:
-            if "tf_model.h5" in model_files:
-                st.download_button(
-                    label="Download Model (TensorFlow)",
-                    data=open(os.path.join(st.session_state.model_path, "tf_model.h5"), "rb"),
-                    file_name="tf_model.h5",
-                    mime="application/octet-stream"
-                )
-            else:
-                st.info("TensorFlow model file not available.")
-        
-        # Model testing interface
-        st.subheader("Test Your Fine-tuned Model")
-        test_prompt = st.text_area("Enter a test prompt:", height=100)
-        
-        if st.button("Generate") and test_prompt:
-            from models.infer import generate_text
+        with model_tabs[1]:  # Batch Processing
+            st.markdown("### Batch Processing")
             
-            with st.spinner("Generating..."):
-                try:
-                    generated_text = generate_text(
-                        model_path=st.session_state.model_path,
-                        prompt=test_prompt
-                    )
-                    st.markdown("### Generated Output")
-                    st.markdown(generated_text)
-                except Exception as e:
-                    st.error(f"Generation error: {str(e)}")
+            # File uploader for batch inferencing
+            batch_file = st.file_uploader("Upload a file with prompts (one per line)", type=["txt", "csv"])
+            
+            col1, col2 = st.columns(2)
+            with col1:
+                batch_temp = st.slider("Temperature", 0.0, 1.0, 0.7, 0.1)
+            with col2:
+                batch_max_length = st.slider("Max Length", 50, 500, 100, 10)
+            
+            if st.button("Run Batch Processing") and batch_file and st.session_state.model_path:
+                with st.spinner("Processing batch..."):
+                    try:
+                        # Read prompts from file
+                        content = batch_file.getvalue().decode("utf-8")
+                        prompts = [line.strip() for line in content.split("\n") if line.strip()]
+                        
+                        # Set up batch parameters
+                        batch_params = {
+                            "temperature": batch_temp,
+                            "max_length": batch_max_length,
+                            "top_p": 0.9,
+                            "top_k": 50
+                        }
+                        
+                        # Run batch processing
+                        results = batch_generate(
+                            model_path=st.session_state.model_path,
+                            prompts=prompts,
+                            generation_params=batch_params
+                        )
+                        
+                        # Display results in table
+                        output_data = []
+                        for i, (prompt, result) in enumerate(zip(prompts, results)):
+                            output_data.append({
+                                "Prompt": prompt,
+                                "Response": result
+                            })
+                        
+                        st.dataframe(output_data)
+                        
+                        # Create download button for results
+                        import pandas as pd
+                        import io
+                        
+                        output_df = pd.DataFrame(output_data)
+                        buffer = io.StringIO()
+                        output_df.to_csv(buffer, index=False)
+                        
+                        st.download_button(
+                            "Download Results CSV",
+                            data=buffer.getvalue(),
+                            file_name="batch_results.csv",
+                            mime="text/csv"
+                        )
+                        
+                    except Exception as e:
+                        st.error(f"Batch processing error: {str(e)}")
+        
+        with model_tabs[2]:  # Export Model
+            st.markdown("### Export Model")
+            
+            # Display model info
+            st.info(f"Model path: {st.session_state.model_path}")
+            
+            # Create download buttons for the model
+            if os.path.exists(st.session_state.model_path):
+                col1, col2 = st.columns(2)
+                
+                with col1:
+                    st.markdown("#### Download Model Files")
+                    
+                    model_files = os.listdir(st.session_state.model_path)
+                    
+                    # Create a zip of the entire model directory
+                    if st.button("Prepare Model for Download"):
+                        with st.spinner("Creating zip file..."):
+                            import shutil
+                            model_name = os.path.basename(st.session_state.model_path)
+                            zip_path = f"{model_name}.zip"
+                            shutil.make_archive(model_name, 'zip', st.session_state.model_path)
+                            
+                            with open(f"{model_name}.zip", "rb") as f:
+                                st.download_button(
+                                    "Download Complete Model",
+                                    f,
+                                    file_name=f"{model_name}.zip",
+                                    mime="application/zip"
+                                )
+                
+                with col2:
+                    st.markdown("#### Push to Hugging Face Hub")
+                    
+                    hf_token = st.text_input("Hugging Face Token", type="password")
+                    hf_repo_name = st.text_input("Repository Name", f"gemma-fine-tuned-{datetime.now().strftime('%Y%m%d')}")
+                    hf_private = st.checkbox("Private Repository", value=True)
+                    
+                    if st.button("Push to Hugging Face"):
+                        with st.spinner("Uploading to Hugging Face Hub..."):
+                            try:
+                                from huggingface_hub import HfApi
+                                
+                                st.info("This functionality requires `huggingface_hub` package. Please install it if needed.")
+                                
+                                api = HfApi(token=hf_token)
+                                api.create_repo(repo_id=hf_repo_name, private=hf_private, exist_ok=True)
+                                
+                                st.success(f"Model uploaded to https://huggingface.co/{hf_repo_name}")
+                            except Exception as e:
+                                st.error(f"Error uploading to Hugging Face: {str(e)}")
     
     # Welcome screen for first-time users
     elif not st.session_state.training_started:

@@ -256,3 +256,87 @@ def visualization():
         "update_freq": update_freq,
         "chart_height": chart_height
     }
+    
+def inference_panel(model_path):
+    """
+    Create UI elements for testing the trained model through inference.
+    
+    Args:
+        model_path (str): Path to the trained model
+    """
+    import streamlit as st
+    import torch
+    from models.infer import generate_text
+    
+    st.markdown("### Test Your Fine-tuned Model")
+    
+    # Input area for test prompts
+    test_prompt = st.text_area("Enter a test prompt:", height=100)
+    
+    # Configuration for generation
+    col1, col2, col3 = st.columns(3)
+    
+    with col1:
+        temperature = st.slider("Temperature", 0.0, 1.0, 0.7, 0.1, 
+                              help="Higher values make output more random, lower values more deterministic")
+    
+    with col2:
+        max_length = st.slider("Max Length", 50, 500, 100, 10,
+                              help="Maximum length of generated text")
+    
+    with col3:
+        top_p = st.slider("Top P", 0.1, 1.0, 0.9, 0.1,
+                         help="Nucleus sampling parameter")
+    
+    # Generate button
+    if st.button("Generate"):
+        if test_prompt:
+            with st.spinner("Generating response..."):
+                try:
+                    # Generate text using the model
+                    response = generate_text(
+                        model_path=model_path,
+                        prompt=test_prompt,
+                        max_length=max_length,
+                        temperature=temperature,
+                        top_p=top_p
+                    )
+                    
+                    # Display the result
+                    st.markdown("### Generated Response:")
+                    st.markdown(response)
+                    
+                    # Add a button to save examples
+                    if st.button("Save this example"):
+                        import os
+                        import json
+                        from datetime import datetime
+                        
+                        # Create examples directory if it doesn't exist
+                        os.makedirs("examples", exist_ok=True)
+                        
+                        # Save the example
+                        example = {
+                            "prompt": test_prompt,
+                            "response": response,
+                            "parameters": {
+                                "temperature": temperature,
+                                "max_length": max_length,
+                                "top_p": top_p
+                            },
+                            "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                        }
+                        
+                        # Generate a filename
+                        filename = f"example_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+                        
+                        # Save to file
+                        with open(os.path.join("examples", filename), "w") as f:
+                            json.dump(example, f, indent=2)
+                        
+                        st.success(f"Example saved as {filename}")
+                        
+                except Exception as e:
+                    st.error(f"Error generating text: {str(e)}")
+        else:
+            st.warning("Please enter a prompt first.")
