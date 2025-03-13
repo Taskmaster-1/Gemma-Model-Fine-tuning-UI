@@ -1,0 +1,14 @@
+torch
+torchvision
+transformers
+datasets
+accelerate
+streamlit
+gradio
+tensorflow
+jax
+flax
+huggingface_hub
+optax
+matplotlib
+scipy
