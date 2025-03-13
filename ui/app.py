@@ -236,4 +236,8 @@ st.markdown(
     "Developed for Google Summer of Code | "
     "[GitHub Repository](https://github.com/Taskmaster-1/Gemma-Model-Fine-tuning-UI) | "
     "[Report Issues](https://github.com/Taskmaster-1/Gemma-Model-Fine-tuning-UI/issues)"
+<<<<<<< HEAD
 )
+=======
+)
+>>>>>>> 7ccfbc3e8009f1a64510e629f86fea3f0e696407
