@@ -2,7 +2,7 @@
 
 A comprehensive and user-friendly web interface for fine-tuning Google's Gemma models on custom datasets without requiring deep ML expertise.
 
-![Project Banner](banner.png)
+![Project Banner](assets/banner.png)
 
 ## 🌟 Features
 
