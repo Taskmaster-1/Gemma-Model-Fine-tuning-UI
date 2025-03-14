@@ -1,26 +1,22 @@
 import streamlit as st
 import os
+import uuid
 
 def dataset_uploader():
     """
     Create a file uploader for datasets.
     
     Returns:
-        str: Path to the uploaded file, or None if no file was uploaded
+        str: Path to the uploaded file, or None if no file was uploaded.
     """
     uploaded_file = st.file_uploader("Upload a CSV, JSONL, or text file", type=["csv", "jsonl", "txt"])
-    
     if uploaded_file:
-        # Create data directory if it doesn't exist
         os.makedirs("data", exist_ok=True)
-        
-        # Save the uploaded file
-        file_path = os.path.join("data", uploaded_file.name)
+        unique_name = f"{uuid.uuid4()}_{uploaded_file.name}"
+        file_path = os.path.join("data", unique_name)
         with open(file_path, "wb") as f:
             f.write(uploaded_file.getbuffer())
-        
         return file_path
-    
     return None
 
 def model_selector():
@@ -31,13 +27,11 @@ def model_selector():
         tuple: (selected_model, model_config)
     """
     col1, col2 = st.columns(2)
-    
     with col1:
         model_name = st.selectbox(
             "Choose a Gemma model", 
             ["gemma-2b", "gemma-7b", "gemma-13b"]
         )
-    
     with col2:
         instruction_format = st.selectbox(
             "Model Format", 
@@ -46,7 +40,6 @@ def model_selector():
         )
     
     st.write("#### Basic Parameters")
-    
     col1, col2 = st.columns(2)
     with col1:
         learning_rate = st.slider(
@@ -57,7 +50,6 @@ def model_selector():
             format="%.6f",
             help="Lower values (e.g., 1e-6) for stability, higher values (e.g., 1e-3) for faster learning"
         )
-    
     with col2:
         epochs = st.slider(
             "Epochs", 
@@ -75,7 +67,6 @@ def model_selector():
             value=8,
             help="Larger batch sizes need more memory but train faster"
         )
-    
     with col2:
         max_length = st.select_slider(
             "Sequence Length", 
@@ -84,7 +75,6 @@ def model_selector():
             help="Maximum token length for each example"
         )
     
-    # Create config dictionary
     model_config = {
         "lr": learning_rate,
         "epochs": epochs,
@@ -92,7 +82,6 @@ def model_selector():
         "max_length": max_length,
         "format": instruction_format.lower()
     }
-    
     return model_name, model_config
 
 def training_config():
@@ -100,11 +89,10 @@ def training_config():
     Create UI elements for advanced training configuration.
     
     Returns:
-        dict: Training configuration parameters
+        dict: Training configuration parameters.
     """
     with st.expander("Advanced Training Options"):
         col1, col2 = st.columns(2)
-        
         with col1:
             weight_decay = st.slider(
                 "Weight Decay", 
@@ -114,7 +102,6 @@ def training_config():
                 step=0.01,
                 help="Regularization parameter to prevent overfitting"
             )
-            
             warmup_ratio = st.slider(
                 "Warmup Ratio", 
                 min_value=0.0, 
@@ -123,7 +110,6 @@ def training_config():
                 step=0.01,
                 help="Portion of training to use for learning rate warmup"
             )
-            
             gradient_accumulation = st.slider(
                 "Gradient Accumulation Steps", 
                 min_value=1, 
@@ -131,7 +117,6 @@ def training_config():
                 value=1,
                 help="Accumulate gradients over multiple steps (helps with limited memory)"
             )
-        
         with col2:
             optimizer = st.selectbox(
                 "Optimizer", 
@@ -139,21 +124,18 @@ def training_config():
                 index=0,
                 help="Optimization algorithm to use during training"
             )
-            
             lr_scheduler = st.selectbox(
                 "LR Scheduler", 
                 ["linear", "cosine", "cosine_with_restarts", "constant"],
                 index=0,
                 help="Learning rate schedule during training"
             )
-            
             mixed_precision = st.selectbox(
                 "Mixed Precision", 
                 ["no", "fp16", "bf16"],
                 index=0,
                 help="Use mixed precision to reduce memory usage (if supported by hardware)"
             )
-    
     return {
         "weight_decay": weight_decay,
         "warmup_ratio": warmup_ratio,
@@ -168,11 +150,10 @@ def export_options():
     Create UI elements for model export configuration.
     
     Returns:
-        dict: Export configuration parameters
+        dict: Export configuration parameters.
     """
     with st.expander("Model Export Options"):
         col1, col2 = st.columns(2)
-        
         with col1:
             export_format = st.multiselect(
                 "Export Formats", 
@@ -180,28 +161,24 @@ def export_options():
                 default=["PyTorch"],
                 help="Formats to export the model to"
             )
-            
             quantization = st.selectbox(
                 "Quantization", 
                 ["None", "8-bit (int8)", "4-bit (int4)"],
                 index=0,
                 help="Reduce model size with quantization (may affect quality)"
             )
-        
         with col2:
             hub_upload = st.checkbox(
                 "Upload to Hugging Face Hub", 
                 value=False,
                 help="Share your model on Hugging Face Hub"
             )
-            
             if hub_upload:
                 hub_model_id = st.text_input(
                     "Model ID", 
                     value="username/gemma-fine-tuned",
                     help="Your Hugging Face username and model name (e.g., username/model-name)"
                 )
-                
                 hub_private = st.checkbox(
                     "Private Repository", 
                     value=True,
@@ -210,7 +187,6 @@ def export_options():
             else:
                 hub_model_id = None
                 hub_private = True
-    
     return {
         "export_format": export_format,
         "quantization": quantization,
@@ -224,15 +200,13 @@ def visualization():
     Create UI elements for visualization settings.
     
     Returns:
-        dict: Visualization configuration parameters
+        dict: Visualization configuration parameters.
     """
     with st.expander("Visualization Settings"):
         col1, col2 = st.columns(2)
-        
         with col1:
             plot_loss = st.checkbox("Plot Loss", value=True)
             plot_accuracy = st.checkbox("Plot Accuracy", value=True)
-            
         with col2:
             update_freq = st.select_slider(
                 "Update Frequency", 
@@ -240,7 +214,6 @@ def visualization():
                 value=10,
                 help="How often to update charts (in steps)"
             )
-            
             chart_height = st.slider(
                 "Chart Height", 
                 min_value=200, 
@@ -249,51 +222,43 @@ def visualization():
                 step=50,
                 help="Height of the charts in pixels"
             )
-    
     return {
         "plot_loss": plot_loss,
         "plot_accuracy": plot_accuracy,
         "update_freq": update_freq,
         "chart_height": chart_height
     }
-    
+
 def inference_panel(model_path):
     """
     Create UI elements for testing the trained model through inference.
     
     Args:
-        model_path (str): Path to the trained model
+        model_path (str): Path to the trained model.
     """
     import streamlit as st
     import torch
     from models.infer import generate_text
+    from datetime import datetime
     
     st.markdown("### Test Your Fine-tuned Model")
-    
-    # Input area for test prompts
     test_prompt = st.text_area("Enter a test prompt:", height=100)
     
-    # Configuration for generation
     col1, col2, col3 = st.columns(3)
-    
     with col1:
-        temperature = st.slider("Temperature", 0.0, 1.0, 0.7, 0.1, 
-                              help="Higher values make output more random, lower values more deterministic")
-    
+        temperature = st.slider("Temperature", 0.0, 1.0, 0.7, 0.1,
+                                  help="Higher values make output more random, lower values more deterministic")
     with col2:
         max_length = st.slider("Max Length", 50, 500, 100, 10,
-                              help="Maximum length of generated text")
-    
+                                help="Maximum length of generated text")
     with col3:
         top_p = st.slider("Top P", 0.1, 1.0, 0.9, 0.1,
                          help="Nucleus sampling parameter")
     
-    # Generate button
     if st.button("Generate"):
         if test_prompt:
             with st.spinner("Generating response..."):
                 try:
-                    # Generate text using the model
                     response = generate_text(
                         model_path=model_path,
                         prompt=test_prompt,
@@ -301,21 +266,10 @@ def inference_panel(model_path):
                         temperature=temperature,
                         top_p=top_p
                     )
-                    
-                    # Display the result
                     st.markdown("### Generated Response:")
                     st.markdown(response)
-                    
-                    # Add a button to save examples
                     if st.button("Save this example"):
-                        import os
-                        import json
-                        from datetime import datetime
-                        
-                        # Create examples directory if it doesn't exist
                         os.makedirs("examples", exist_ok=True)
-                        
-                        # Save the example
                         example = {
                             "prompt": test_prompt,
                             "response": response,
@@ -326,16 +280,11 @@ def inference_panel(model_path):
                             },
                             "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                         }
-                        
-                        # Generate a filename
                         filename = f"example_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
-                        
-                        # Save to file
                         with open(os.path.join("examples", filename), "w") as f:
+                            import json
                             json.dump(example, f, indent=2)
-                        
                         st.success(f"Example saved as {filename}")
-                        
                 except Exception as e:
                     st.error(f"Error generating text: {str(e)}")
         else:
