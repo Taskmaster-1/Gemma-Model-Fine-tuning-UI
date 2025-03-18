@@ -108,8 +108,6 @@ pytest
 ## 💬 Communication
 
 - GitHub Issues: For bug reports and feature requests
-- [Discord Server](#): For real-time discussion (Replace with actual link)
-- [Mailing List](#): For important announcements (Replace with actual link)
 
 ## 📜 License
 
