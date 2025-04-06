@@ -103,7 +103,7 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ## 📞 Contact
 
-For questions or support, please open an issue or contact the author at [vivekyad5223@gmail.com](mailto:vivekyad5223@gmail.com).
+For questions or support, please open an issue or contact the author at [vivekyad5223@gmail.com](mailto:i.am.vivekyadav5223@gmail.com).
 
 ## 👏 Acknowledgements
 
